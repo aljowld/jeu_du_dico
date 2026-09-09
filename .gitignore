@@ -12,3 +12,7 @@ wheels/
 
 # vs code
 .vscode/
+
+# Frontend
+node_modules/
+**/dist/

@@ -2,9 +2,11 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.backend.database import init_db
 from src.backend.routers import auth, game
@@ -44,3 +46,8 @@ def health_check() -> dict[str, str]:
     """Return service health status."""
     return {"status": "ok"}
 
+
+# Mount static frontend build if it exists
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
