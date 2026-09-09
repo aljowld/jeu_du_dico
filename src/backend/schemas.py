@@ -18,6 +18,13 @@ class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=128, description="User plain-text password.")
 
 
+class UserLogin(BaseModel):
+    """Schema for user credentials during login."""
+
+    username: str = Field(description="Username or email.")
+    password: str = Field(description="User plain-text password.")
+
+
 class UserRead(UserBase):
     """Schema for returning user data to clients."""
 
@@ -27,3 +34,15 @@ class UserRead(UserBase):
     is_active: bool
     created_at: datetime
 
+
+class Token(BaseModel):
+    """Schema representing an authentication token."""
+
+    access_token: str
+    token_type: str = Field(default="bearer")
+
+
+class TokenPayload(BaseModel):
+    """Schema representing the decoded JWT payload."""
+
+    sub: str | None = None
