@@ -1,5 +1,6 @@
 """Database configuration and session management."""
 
+import os
 import types
 from pathlib import Path
 
@@ -8,14 +9,16 @@ from sqlalchemy.orm import sessionmaker
 
 from src.backend.models import Base
 
-# Build database path relative to backend folder
+# Build database path relative to backend folder or read from env
 DB_PATH = Path(__file__).parent / "words.db"
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+
+connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
 
 # check_same_thread=False is required for SQLite when used with FastAPI
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

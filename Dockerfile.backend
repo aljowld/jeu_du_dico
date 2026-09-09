@@ -1,0 +1,27 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+# Enable bytecode compilation and disable python buffering
+ENV UV_COMPILE_BYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Copy dependency definition files first for optimal docker layer caching
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies without installing the project itself
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy backend source code
+COPY src/backend ./src/backend
+
+# Synchronize project
+RUN uv sync --frozen --no-dev
+
+# Populate words database if not present
+RUN uv run python -m src.backend.seed_db
+
+EXPOSE 8000
+
+CMD ["uv", "run", "uvicorn", "src.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
