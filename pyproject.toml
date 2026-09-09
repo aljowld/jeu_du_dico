@@ -1,0 +1,51 @@
+[project]
+name = "jeu-du-dico"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "bcrypt>=5.0.0",
+    "email-validator>=2.3.0",
+    "pydantic>=2.13.5",
+    "sqlalchemy>=2.0.52",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.6",
+    "ty>=0.0.79",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/backend/tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+ignore = [
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D203",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    "Q004",
+    "COM812",
+    "COM819",
+    "CPY001",  # Ignore missing copyright notice
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
