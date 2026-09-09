@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.backend.database import init_db
-from src.backend.routers import auth
+from src.backend.routers import auth, game
 
 
 @asynccontextmanager
@@ -35,6 +35,8 @@ app.add_middleware(
 
 # Register routers
 app.include_router(auth.router)
+app.include_router(game.router)
+app.include_router(game.ws_router)
 
 
 @app.get("/api/health", tags=["health"], summary="Service health check")

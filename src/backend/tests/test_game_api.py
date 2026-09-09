@@ -1,0 +1,106 @@
+"""Integration tests for game rooms REST and WebSocket endpoints."""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from src.backend.database import get_db
+from src.backend.main import app
+from src.backend.models import Base
+from src.backend.word_service import add_word
+
+
+@pytest.fixture
+def client_with_seeded_words():
+    """Create a TestClient with initialized database and seeded words."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    # Seed test words
+    with testing_session_local() as db:
+        add_word(db, "oriflamme", "Bannière d'apparat rouge orangé.")
+        add_word(db, "marcescent", "Qui se flétrit sans se détacher.")
+
+    def override_get_db():
+        session = testing_session_local()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    # Also patch SessionLocal in game routers so actions use this in-memory DB
+    import src.backend.routers.game as game_router_mod
+    original_session_local = game_router_mod.SessionLocal
+    game_router_mod.SessionLocal = testing_session_local
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    game_router_mod.SessionLocal = original_session_local
+    app.dependency_overrides.clear()
+
+
+def test_create_and_join_room(client_with_seeded_words):
+    """Test room creation and player join via REST."""
+    # 1. Create room
+    create_resp = client_with_seeded_words.post(
+        "/api/rooms",
+        json={"host_name": "HostUser"},
+    )
+    assert create_resp.status_code == 201
+    host_data = create_resp.json()
+    assert len(host_data["room_code"]) == 4
+    assert host_data["is_host"] is True
+    room_code = host_data["room_code"]
+
+    # 2. Get room info
+    info_resp = client_with_seeded_words.get(f"/api/rooms/{room_code}")
+    assert info_resp.status_code == 200
+    assert info_resp.json()["player_count"] == 1
+
+    # 3. Join room
+    join_resp = client_with_seeded_words.post(
+        f"/api/rooms/{room_code}/join",
+        json={"player_name": "PlayerTwo"},
+    )
+    assert join_resp.status_code == 200
+    player2_data = join_resp.json()
+    assert player2_data["is_host"] is False
+    assert player2_data["room_code"] == room_code
+
+
+def test_websocket_game_flow(client_with_seeded_words):
+    """Test real-time WebSocket connection and basic game commands."""
+    create_resp = client_with_seeded_words.post(
+        "/api/rooms",
+        json={"host_name": "HostAlice"},
+    )
+    host_data = create_resp.json()
+    room_code = host_data["room_code"]
+    host_id = host_data["player_id"]
+
+    # Connect via WebSocket
+    with client_with_seeded_words.websocket_connect(
+        f"/ws/rooms/{room_code}/{host_id}"
+    ) as ws:
+        # Initial connection state update
+        msg = ws.receive_json()
+        assert msg["type"] == "STATE_UPDATE"
+        assert msg["data"]["state"] == "LOBBY"
+
+        # Host starts the game
+        ws.send_json({"action": "START_GAME"})
+        msg2 = ws.receive_json()
+        assert msg2["type"] == "STATE_UPDATE"
+        assert msg2["data"]["state"] == "WORD_SELECTION"
+        assert "current_word" in msg2["data"]
+

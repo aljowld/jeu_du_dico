@@ -46,3 +46,32 @@ class TokenPayload(BaseModel):
     """Schema representing the decoded JWT payload."""
 
     sub: str | None = None
+
+
+class CreateRoomRequest(BaseModel):
+    """Request payload for creating a new game room."""
+
+    host_name: str = Field(min_length=2, max_length=30, description="Host player nickname.")
+
+
+class JoinRoomRequest(BaseModel):
+    """Request payload for joining an existing game room."""
+
+    player_name: str = Field(min_length=2, max_length=30, description="Player nickname.")
+
+
+class RoomAccessResponse(BaseModel):
+    """Response returned upon creating or joining a room."""
+
+    room_code: str
+    player_id: str
+    player_name: str
+    is_host: bool
+
+
+class RoomInfoResponse(BaseModel):
+    """Basic overview info of a game room."""
+
+    room_code: str
+    state: str
+    player_count: int
