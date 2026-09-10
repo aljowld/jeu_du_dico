@@ -8,8 +8,8 @@ services:
     environment:
       - JWT_SECRET_KEY=change-in-production-jwt-secret-key-32-chars
     volumes:
-      # Persist SQLite database file
-      - backend-db:/app/src/backend
+      # Direct bind-mount: any update to words.db or code is instantly live
+      - ./src/backend:/app/src/backend
     restart: unless-stopped
 
   frontend:
@@ -22,6 +22,4 @@ services:
       - backend
     restart: unless-stopped
 
-volumes:
-  backend-db:
 

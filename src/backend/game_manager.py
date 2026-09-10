@@ -239,8 +239,12 @@ class GameRoom:
             voters_names = [self.players[v_id].name for v_id in voters_ids if v_id in self.players]
 
             is_real = opt.author_id is None
-            author_name = "Le Vrai Dictionnaire" if is_real else (
-                self.players[opt.author_id].name if opt.author_id in self.players else "Inconnu"
+            author_name = (
+                "Le Vrai Dictionnaire"
+                if is_real
+                else (
+                    self.players[opt.author_id].name if opt.author_id in self.players else "Inconnu"
+                )
             )
 
             # Score calculation:
@@ -252,14 +256,16 @@ class GameRoom:
             elif opt.author_id in points_awarded:
                 points_awarded[opt.author_id] += len(voters_ids)
 
-            breakdown.append({
-                "option_id": opt.id,
-                "text": opt.text,
-                "is_real": is_real,
-                "author_name": author_name,
-                "author_id": opt.author_id,
-                "voters": voters_names,
-            })
+            breakdown.append(
+                {
+                    "option_id": opt.id,
+                    "text": opt.text,
+                    "is_real": is_real,
+                    "author_name": author_name,
+                    "author_id": opt.author_id,
+                    "voters": voters_names,
+                }
+            )
 
         # Apply points to overall scores
         for p_id, pts in points_awarded.items():
@@ -272,11 +278,14 @@ class GameRoom:
             "real_option_id": real_option_id,
             "options": breakdown,
             "points_awarded": points_awarded,
-            "scoreboard": [p.to_dict() for p in sorted(
-                self.players.values(),
-                key=lambda p: p.score,
-                reverse=True,
-            )],
+            "scoreboard": [
+                p.to_dict()
+                for p in sorted(
+                    self.players.values(),
+                    key=lambda p: p.score,
+                    reverse=True,
+                )
+            ],
         }
 
     def get_state_for_player(self, player_id: str) -> dict[str, Any]:

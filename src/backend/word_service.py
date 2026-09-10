@@ -56,4 +56,3 @@ def get_words_count(db: Session) -> int:
     """
     stmt = select(func.count(Word.id))
     return db.scalar(stmt) or 0
-

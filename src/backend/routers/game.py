@@ -188,4 +188,3 @@ async def websocket_game_endpoint(
         player.is_connected = False
         manager.disconnect(code, player_id)
         await manager.broadcast_state(code, room)
-

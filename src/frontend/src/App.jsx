@@ -413,6 +413,19 @@ export default function App() {
           )}
         </div>
       )}
+
+      <footer style={{ textAlign: 'center', marginTop: '32px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+        Définitions issues du{' '}
+        <a
+          href="https://fr.wiktionary.org"
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: 'var(--accent)', textDecoration: 'none' }}
+        >
+          Wiktionnaire
+        </a>{' '}
+        (licence CC BY-SA 4.0)
+      </footer>
     </div>
   )
 }
