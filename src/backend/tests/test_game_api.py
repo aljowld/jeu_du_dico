@@ -96,6 +96,12 @@ def test_websocket_game_flow(client_with_seeded_words):
         msg = ws.receive_json()
         assert msg["type"] == "STATE_UPDATE"
         assert msg["data"]["state"] == "LOBBY"
+        assert msg["data"]["writing_time_limit"] == 60
+
+        # Host updates settings
+        ws.send_json({"action": "UPDATE_SETTINGS", "writing_time_limit": 75})
+        settings_msg = ws.receive_json()
+        assert settings_msg["data"]["writing_time_limit"] == 75
 
         # Host starts the game
         ws.send_json({"action": "START_GAME"})

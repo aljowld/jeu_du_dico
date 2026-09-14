@@ -5,7 +5,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.backend.game_manager import GameManager, GameState
+from src.backend.game_manager import (
+    DEFAULT_WRITING_TIME,
+    MAX_WRITING_TIME,
+    MIN_WRITING_TIME,
+    GameManager,
+    GameState,
+)
 from src.backend.models import Base
 from src.backend.word_service import add_word
 
@@ -25,6 +31,44 @@ def db_session():
         yield session
     finally:
         session.close()
+
+
+def test_room_settings_writing_time(db_session):
+    """Test updating the writing time limit with validation."""
+    gm = GameManager()
+    room, _host = gm.create_room("Alice")
+
+    # Check default
+    assert room.writing_time_limit == DEFAULT_WRITING_TIME
+    assert room.writing_time_limit == 60
+
+    # Valid step updates
+    assert room.update_writing_time_limit(65) is True
+    assert room.writing_time_limit == 65
+
+    assert room.update_writing_time_limit(MIN_WRITING_TIME) is True
+    assert room.writing_time_limit == 10
+
+    assert room.update_writing_time_limit(MAX_WRITING_TIME) is True
+    assert room.writing_time_limit == 300
+
+    # Invalid below min
+    assert room.update_writing_time_limit(5) is False
+    assert room.writing_time_limit == 300
+
+    # Invalid above max
+    assert room.update_writing_time_limit(305) is False
+    assert room.writing_time_limit == 300
+
+    # Invalid step
+    assert room.update_writing_time_limit(62) is False
+    assert room.writing_time_limit == 300
+
+    # Cannot update once game starts
+    add_word(db_session, "testword", "test definition")
+    room.draw_word(db_session)
+    assert room.state == GameState.WORD_SELECTION
+    assert room.update_writing_time_limit(70) is False
 
 
 def test_full_game_loop_and_scoring(db_session):
@@ -55,6 +99,7 @@ def test_full_game_loop_and_scoring(db_session):
     # 3. Start writing
     assert room.start_writing() is True
     assert room.state == GameState.WRITING
+    assert room.writing_started_at is not None
 
     # 4. Submit definitions
     # Alice submits
@@ -95,4 +140,40 @@ def test_full_game_loop_and_scoring(db_session):
     assert results is not None
     assert results["points_awarded"][host.id] == 2
     assert results["points_awarded"][bob.id] == 0
+
+
+def test_writing_timeout_and_empty_definition_fallback(db_session):
+    """Test auto-validation of unsubmitted and empty definitions at writing timeout."""
+    add_word(db_session, "acrasie", "Agir à l'encontre de son meilleur jugement.")
+
+    gm = GameManager()
+    room, host = gm.create_room("Alice")
+    bob = room.add_player("Bob")
+    charlie = room.add_player("Charlie")
+
+    room.draw_word(db_session)
+    room.start_writing()
+    assert room.state == GameState.WRITING
+
+    # Alice submitted a definition manually
+    assert room.submit_definition(host.id, "Une faiblesse de volonté.") is True
+    # Duplicate submission is rejected
+    assert room.submit_definition(host.id, "Une autre définition.") is False
+
+    # Bob sends an empty definition (e.g. from timed-out empty textarea)
+    assert room.submit_definition(bob.id, "") is True
+    assert room.submitted_definitions[bob.id] == "(Aucune proposition)"
+
+    # Charlie never submitted anything before timeout
+    assert charlie.id not in room.submitted_definitions
+
+    # Timeout occurs
+    assert room.timeout_writing() is True
+    assert room.state == GameState.VOTING
+
+    # Charlie got auto-filled with fallback
+    assert room.submitted_definitions[charlie.id] == "(Aucune proposition)"
+
+    # Check that all options exist in room.options (1 real + 3 players)
+    assert len(room.options) == 4
 

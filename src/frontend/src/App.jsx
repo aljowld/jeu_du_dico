@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { GameSocket } from './socket'
 
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  if (m > 0 && s > 0) return `${m} min ${s.toString().padStart(2, '0')} s`
+  if (m > 0) return `${m} min`
+  return `${s} s`
+}
+
 export default function App() {
   // Session & Connection state
   const [player, setPlayer] = useState(null) // { room_code, player_id, player_name, is_host }
@@ -13,9 +21,13 @@ export default function App() {
   const [nickname, setNickname] = useState('')
   const [roomCodeInput, setRoomCodeInput] = useState('')
 
+  // Lobby view state
+  const [lobbyTab, setLobbyTab] = useState('players') // 'players' | 'settings'
+
   // In-game local inputs
   const [fakeDefinition, setFakeDefinition] = useState('')
   const [selectedVoteId, setSelectedVoteId] = useState(null)
+  const [timeLeft, setTimeLeft] = useState(null)
 
   const socketRef = useRef(null)
 
@@ -44,15 +56,49 @@ export default function App() {
     }
   }, [player])
 
+  // Keep latest input in a ref for auto-submission on timer expiration
+  const fakeDefinitionRef = useRef(fakeDefinition)
+  useEffect(() => {
+    fakeDefinitionRef.current = fakeDefinition
+  }, [fakeDefinition])
+
+  const hasSubmittedRef = useRef(false)
+
   // Reset inputs when game phase changes
   useEffect(() => {
     if (gameState?.state === 'WRITING') {
       setFakeDefinition('')
+      hasSubmittedRef.current = false
     }
     if (gameState?.state === 'VOTING') {
       setSelectedVoteId(null)
     }
   }, [gameState?.state])
+
+  // Countdown timer for WRITING phase with automatic submission when timer ends
+  useEffect(() => {
+    if (gameState?.state === 'WRITING' && gameState.writing_started_at && gameState.writing_time_limit) {
+      const updateTimer = () => {
+        const now = Date.now() / 1000
+        const elapsed = now - gameState.writing_started_at
+        const remaining = Math.max(0, Math.ceil(gameState.writing_time_limit - elapsed))
+        setTimeLeft(remaining)
+
+        // Automatically validate / submit whatever text was entered when timer expires
+        if (remaining <= 0 && !hasSubmittedRef.current && !gameState.has_submitted) {
+          hasSubmittedRef.current = true
+          const textToSubmit = fakeDefinitionRef.current.trim() || '(Aucune proposition)'
+          sendAction('SUBMIT_DEFINITION', { definition: textToSubmit })
+        }
+      }
+      updateTimer()
+      const interval = setInterval(updateTimer, 250)
+      return () => clearInterval(interval)
+    }
+    setTimeLeft(null)
+  }, [gameState?.state, gameState?.writing_started_at, gameState?.writing_time_limit, gameState?.has_submitted])
+
+
 
   // --- Handlers ---
   const handleCreateRoom = async (e) => {
@@ -112,11 +158,20 @@ export default function App() {
   const handleStartWriting = () => sendAction('START_WRITING')
   const handleNextRound = () => sendAction('NEXT_ROUND')
 
+  const handleUpdateWritingTime = (newSeconds) => {
+    if (newSeconds >= 10 && newSeconds <= 300) {
+      sendAction('UPDATE_SETTINGS', { writing_time_limit: newSeconds })
+    }
+  }
+
   const handleSubmitDefinition = (e) => {
     e.preventDefault()
+    if (e) e.preventDefault()
     if (!fakeDefinition.trim()) return
+    hasSubmittedRef.current = true
     sendAction('SUBMIT_DEFINITION', { definition: fakeDefinition.trim() })
   }
+
 
   const handleSubmitVote = (optionId) => {
     setSelectedVoteId(optionId)
@@ -206,6 +261,7 @@ export default function App() {
 
   // 2. In-game screens
   const isHost = gameState?.is_host ?? player.is_host
+  const writingTimeLimit = gameState?.writing_time_limit ?? 60
 
   return (
     <div className="app-container">
@@ -228,26 +284,183 @@ export default function App() {
             </h1>
           </div>
 
-          <div>
-            <h3>Joueurs connectés ({gameState?.players?.length || 0}) :</h3>
-            <div className="player-list" style={{ marginTop: '12px' }}>
-              {gameState?.players?.map((p) => (
-                <div key={p.id} className={`player-chip ${p.is_host ? 'host' : ''}`}>
-                  <span>{p.name}</span>
-                  {p.is_host && <span>👑</span>}
-                </div>
-              ))}
-            </div>
+          {/* Lobby navigation tabs */}
+          <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--card-border)', paddingBottom: '12px' }}>
+            <button
+              className={`btn ${lobbyTab === 'players' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ flex: 1, padding: '10px 16px', fontSize: '1rem' }}
+              onClick={() => setLobbyTab('players')}
+            >
+              👥 Joueurs ({gameState?.players?.length || 0})
+            </button>
+            <button
+              className={`btn ${lobbyTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ flex: 1, padding: '10px 16px', fontSize: '1rem' }}
+              onClick={() => setLobbyTab('settings')}
+            >
+              ⚙️ Paramètres {isHost ? '👑' : ''}
+            </button>
           </div>
 
-          {isHost ? (
-            <button className="btn btn-accent" onClick={handleStartGame}>
-              Lancer la partie 🚀
-            </button>
-          ) : (
-            <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-              En attente que l'hôte lance la partie...
-            </p>
+          {/* Tab 1: Players list */}
+          {lobbyTab === 'players' && (
+            <>
+              <div>
+                <div className="player-list" style={{ marginTop: '8px' }}>
+                  {gameState?.players?.map((p) => (
+                    <div key={p.id} className={`player-chip ${p.is_host ? 'host' : ''}`}>
+                      <span>{p.name}</span>
+                      {p.is_host && <span>👑</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Direct timer controls in lobby view */}
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '14px',
+                padding: '14px 18px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    ⏱️ Temps d'écriture :
+                    <span style={{ color: '#fbbf24', fontFamily: 'var(--font-display)', fontSize: '1.25rem' }}>
+                      {formatDuration(writingTimeLimit)}
+                    </span>
+                  </div>
+                </div>
+
+                {isHost && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '40px', height: '40px', fontSize: '1.4rem', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      disabled={writingTimeLimit <= 10}
+                      onClick={() => handleUpdateWritingTime(writingTimeLimit - 5)}
+                      title="Diminuer de 5 secondes"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '40px', height: '40px', fontSize: '1.4rem', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      disabled={writingTimeLimit >= 300}
+                      onClick={() => handleUpdateWritingTime(writingTimeLimit + 5)}
+                      title="Augmenter de 5 secondes"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isHost ? (
+                <button className="btn btn-accent" onClick={handleStartGame}>
+                  Lancer la partie 🚀
+                </button>
+              ) : (
+                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  En attente que l'hôte lance la partie...
+                </p>
+              )}
+            </>
+          )}
+
+          {/* Tab 2: Settings page */}
+          {lobbyTab === 'settings' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '1.15rem' }}>⚙️ Paramètres du salon</h3>
+                {isHost ? (
+                  <span style={{ fontSize: '0.8rem', color: '#fbbf24', background: 'rgba(251, 191, 36, 0.15)', padding: '4px 10px', borderRadius: '8px', fontWeight: 600 }}>
+                    👑 Chef de groupe
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                    Lecture seule (modifiable par le chef)
+                  </span>
+                )}
+              </div>
+
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.45)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '16px',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                <div>
+                  <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                    ⏱️ Temps pour écrire la définition
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Durée accordée aux joueurs pour inventer et soumettre leur définition.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', margin: '10px 0' }}>
+                  {isHost && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ width: '48px', height: '48px', fontSize: '1.5rem', padding: 0 }}
+                      disabled={writingTimeLimit <= 10}
+                      onClick={() => handleUpdateWritingTime(writingTimeLimit - 5)}
+                    >
+                      −
+                    </button>
+                  )}
+
+                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.2rem', fontWeight: 700, color: '#fef08a' }}>
+                      {formatDuration(writingTimeLimit)}
+                    </div>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      ({writingTimeLimit} secondes)
+                    </span>
+                  </div>
+
+                  {isHost && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ width: '48px', height: '48px', fontSize: '1.5rem', padding: 0 }}
+                      disabled={writingTimeLimit >= 300}
+                      onClick={() => handleUpdateWritingTime(writingTimeLimit + 5)}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+
+                <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Minimum 10 s · Maximum 5 min
+                </p>
+              </div>
+
+              {isHost && (
+                <button className="btn btn-accent" onClick={handleStartGame}>
+                  Lancer la partie 🚀
+                </button>
+              )}
+
+              <button
+                className="btn btn-secondary"
+                style={{ alignSelf: 'center' }}
+                onClick={() => setLobbyTab('players')}
+              >
+                ⬅️ Retour à la liste des joueurs
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -287,6 +500,21 @@ export default function App() {
             <div className="word-display" style={{ fontSize: '2rem', margin: '8px 0' }}>
               {gameState.current_word}
             </div>
+
+            {/* Countdown timer */}
+            {timeLeft !== null && (
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '1.3rem',
+                fontWeight: 700,
+                color: timeLeft <= 10 ? 'var(--error)' : 'var(--accent)',
+                color: timeLeft <= 5 ? 'var(--error)' : 'var(--accent)',
+                marginTop: '4px',
+              }}>
+                ⏱️ Temps restant : {timeLeft} s
+                {timeLeft > 0 ? `⏱️ Temps restant : ${timeLeft} s` : '⏱️ Temps écoulé ! Validation automatique...'}
+              </div>
+            )}
           </div>
 
           {gameState.has_submitted ? (

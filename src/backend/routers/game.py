@@ -1,5 +1,6 @@
 """Game room management and WebSocket routes for real-time play."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -14,6 +15,7 @@ from fastapi import (
 from src.backend.connection_manager import manager
 from src.backend.database import SessionLocal
 from src.backend.game_manager import GameRoom, Player, game_manager
+from src.backend.game_manager import GameRoom, GameState, Player, game_manager
 from src.backend.schemas import (
     CreateRoomRequest,
     JoinRoomRequest,
@@ -22,6 +24,9 @@ from src.backend.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+background_tasks: set[asyncio.Task[Any]] = set()
+
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 ws_router = APIRouter(tags=["websockets"])
@@ -113,6 +118,50 @@ def get_room_info(room_code: str) -> RoomInfoResponse:
     )
 
 
+async def schedule_writing_timeout(
+    room_code: str,
+    round_number: int,
+    duration_seconds: int,
+) -> None:
+    """Wait for writing duration to expire, then auto-submit pending definitions.
+
+    Args:
+        room_code: 4-character room code.
+        round_number: Round number when timer was started.
+        duration_seconds: Duration in seconds to wait.
+    """
+    await asyncio.sleep(duration_seconds + 1.0)
+    room = game_manager.get_room(room_code)
+    if room and room.state == GameState.WRITING and room.round_number == round_number:
+        logger.info(
+            "Writing timer expired for room %s (round %s), auto-submitting pending definitions.",
+            room_code,
+            round_number,
+        )
+        if room.timeout_writing():
+            await manager.broadcast_state(room_code, room)
+
+
+def start_writing_timer(room_code: str, round_number: int, duration_seconds: int) -> None:
+    """Launch background timeout task for writing phase.
+
+    Args:
+        room_code: 4-character room code.
+        round_number: Round number when timer was started.
+        duration_seconds: Duration in seconds to wait.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    task = loop.create_task(
+        schedule_writing_timeout(room_code, round_number, duration_seconds)
+    )
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+
 def handle_game_action(
     action: str | None,
     data: dict[str, Any],
@@ -130,26 +179,39 @@ def handle_game_action(
     Returns:
         True if the room state was modified, False otherwise.
     """
+    changed = False
+
     if action in {"START_GAME", "NEXT_ROUND"} and player.is_host:
         with SessionLocal() as db:
-            return room.draw_word(db)
+            changed = room.draw_word(db)
 
-    if action == "REROLL_WORD" and player.is_host:
+    elif action == "REROLL_WORD" and player.is_host:
         with SessionLocal() as db:
-            return room.reroll_word(db)
+            changed = room.reroll_word(db)
 
-    if action == "START_WRITING" and player.is_host:
-        return room.start_writing()
+    elif action == "START_WRITING" and player.is_host:
+        changed = room.start_writing()
+        if changed:
+            start_writing_timer(room.code, room.round_number, room.writing_time_limit)
 
-    if action == "SUBMIT_DEFINITION":
+    elif action == "UPDATE_SETTINGS" and player.is_host:
+        writing_time = data.get("writing_time_limit")
+        if isinstance(writing_time, int):
+            changed = room.update_writing_time_limit(writing_time)
+
+    elif action == "SUBMIT_DEFINITION":
         definition = str(data.get("definition", "")).strip()
-        return bool(definition and room.submit_definition(player.id, definition))
+        changed = bool(definition and room.submit_definition(player.id, definition))
+        raw_definition = str(data.get("definition", "")).strip()
+        definition = raw_definition or "(Aucune proposition)"
+        changed = room.submit_definition(player.id, definition)
 
-    if action == "SUBMIT_VOTE":
+    elif action == "SUBMIT_VOTE":
         option_id = str(data.get("option_id", "")).strip()
-        return bool(option_id and room.submit_vote(player.id, option_id))
+        changed = bool(option_id and room.submit_vote(player.id, option_id))
 
-    return False
+    return changed
+
 
 
 @ws_router.websocket("/ws/rooms/{room_code}/{player_id}")

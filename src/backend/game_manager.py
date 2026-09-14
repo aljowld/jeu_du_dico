@@ -3,6 +3,7 @@
 import random
 import secrets
 import string
+import time
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -12,6 +13,11 @@ from sqlalchemy.orm import Session
 
 from src.backend.models import Word
 from src.backend.word_service import get_random_word
+
+MIN_WRITING_TIME = 10
+MAX_WRITING_TIME = 300
+DEFAULT_WRITING_TIME = 60
+STEP_WRITING_TIME = 5
 
 
 class GameState(StrEnum):
@@ -70,11 +76,29 @@ class GameRoom:
     votes: dict[str, str] = field(default_factory=dict)  # player_id -> option_id
     round_results: dict[str, Any] | None = None
     round_number: int = 0
+    writing_time_limit: int = DEFAULT_WRITING_TIME
+    writing_started_at: float | None = None
 
     @property
     def connected_players(self) -> list[Player]:
         """Return list of currently connected players."""
         return [p for p in self.players.values() if p.is_connected]
+
+    def update_writing_time_limit(self, seconds: int) -> bool:
+        """Update writing time limit if within permitted bounds.
+
+        Args:
+            seconds: Target duration in seconds.
+
+        Returns:
+            True if updated, False otherwise.
+        """
+        if self.state != GameState.LOBBY:
+            return False
+        if MIN_WRITING_TIME <= seconds <= MAX_WRITING_TIME and seconds % STEP_WRITING_TIME == 0:
+            self.writing_time_limit = seconds
+            return True
+        return False
 
     def add_player(self, name: str, *, is_host: bool = False) -> Player:
         """Add a new player to the room.
@@ -142,6 +166,7 @@ class GameRoom:
         """
         if self.state != GameState.WORD_SELECTION or self.current_word is None:
             return False
+        self.writing_started_at = time.time()
         self.state = GameState.WRITING
         return True
 
@@ -159,12 +184,35 @@ class GameRoom:
             return False
 
         self.submitted_definitions[player_id] = definition.strip()
+        if player_id in self.submitted_definitions:
+            return False
+
+        clean_def = definition.strip() or "(Aucune proposition)"
+        self.submitted_definitions[player_id] = clean_def
 
         # If all connected players have submitted, prepare voting automatically
         if len(self.submitted_definitions) >= len(self.connected_players):
             self.start_voting()
 
         return True
+
+    def timeout_writing(self) -> bool:
+        """Handle writing timeout: fill missing definitions and transition to voting.
+
+        Returns:
+            True if state transitioned to VOTING, False otherwise.
+        """
+        if self.state != GameState.WRITING:
+            return False
+
+        # Fill missing definitions for any connected players who did not submit in time
+        for player in self.connected_players:
+            if player.id not in self.submitted_definitions:
+                self.submitted_definitions[player.id] = "(Aucune proposition)"
+
+        self.start_voting()
+        return True
+
 
     def start_voting(self) -> None:
         """Prepare shuffled definitions and switch state to VOTING."""
@@ -304,6 +352,7 @@ class GameRoom:
             "round_number": self.round_number,
             "players": [p.to_dict() for p in self.players.values()],
             "is_host": self.host_id == player_id,
+            "writing_time_limit": self.writing_time_limit,
         }
 
         if self.state in {GameState.WORD_SELECTION, GameState.WRITING} and self.current_word:
@@ -311,6 +360,8 @@ class GameRoom:
             base["has_submitted"] = player_id in self.submitted_definitions
             base["submissions_count"] = len(self.submitted_definitions)
             base["total_needed"] = len(self.connected_players)
+            if self.state == GameState.WRITING:
+                base["writing_started_at"] = self.writing_started_at
 
         elif self.state == GameState.VOTING and self.current_word:
             base["current_word"] = self.current_word.word
