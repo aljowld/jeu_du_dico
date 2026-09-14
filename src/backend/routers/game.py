@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from fastapi import (
@@ -14,8 +15,14 @@ from fastapi import (
 
 from src.backend.connection_manager import manager
 from src.backend.database import SessionLocal
-from src.backend.game_manager import GameRoom, Player, game_manager
-from src.backend.game_manager import GameRoom, GameState, Player, game_manager
+from src.backend.game_manager import (
+    DISCONNECT_TIMEOUT,
+    MAX_PLAYERS,
+    GameRoom,
+    GameState,
+    Player,
+    game_manager,
+)
 from src.backend.schemas import (
     CreateRoomRequest,
     JoinRoomRequest,
@@ -80,6 +87,12 @@ def join_room(room_code: str, payload: JoinRoomRequest) -> RoomAccessResponse:
         )
 
     player = room.add_player(name=payload.player_name, is_host=False)
+    if player is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La salle '{room_code.upper()}' est complète ({MAX_PLAYERS} joueurs maximum).",
+        )
+
     return RoomAccessResponse(
         room_code=room.code,
         player_id=player.id,
@@ -115,6 +128,7 @@ def get_room_info(room_code: str) -> RoomInfoResponse:
         room_code=room.code,
         state=room.state,
         player_count=len(room.players),
+        max_players=MAX_PLAYERS,
     )
 
 
@@ -155,11 +169,104 @@ def start_writing_timer(room_code: str, round_number: int, duration_seconds: int
     except RuntimeError:
         return
 
+    task = loop.create_task(schedule_writing_timeout(room_code, round_number, duration_seconds))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+
+async def schedule_disconnect_cleanup(
+    room_code: str,
+    player_id: str,
+    timeout_seconds: float = DISCONNECT_TIMEOUT,
+) -> None:
+    """Wait for disconnect timeout, then kick player if still disconnected.
+
+    Args:
+        room_code: 4-character room code.
+        player_id: Unique player ID.
+        timeout_seconds: Duration in seconds before expulsion.
+    """
+    await asyncio.sleep(timeout_seconds)
+    room = game_manager.get_room(room_code)
+    if room is None or player_id not in room.players:
+        return
+
+    player = room.players[player_id]
+    if not player.is_connected:
+        logger.info(
+            "Player %s (%s) was disconnected for %ss. Removing from room %s.",
+            player.name,
+            player_id,
+            timeout_seconds,
+            room_code,
+        )
+        room.remove_player(player_id)
+        if not room.players:
+            game_manager.rooms.pop(room_code, None)
+            logger.info("Room %s is now empty and has been removed.", room_code)
+        else:
+            await manager.broadcast_state(room_code, room)
+
+
+def start_disconnect_timer(
+    room_code: str,
+    player_id: str,
+    timeout_seconds: float = DISCONNECT_TIMEOUT,
+) -> None:
+    """Launch background task for disconnect timeout.
+
+    Args:
+        room_code: 4-character room code.
+        player_id: Unique player ID.
+        timeout_seconds: Duration in seconds before expulsion.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
     task = loop.create_task(
-        schedule_writing_timeout(room_code, round_number, duration_seconds)
+        schedule_disconnect_cleanup(room_code, player_id, timeout_seconds)
     )
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
+
+
+def handle_host_action(
+    action: str,
+    data: dict[str, Any],
+    room: GameRoom,
+) -> bool:
+    """Execute host-only game actions.
+
+    Args:
+        action: Game action identifier.
+        data: Additional payload received from WebSocket.
+        room: Target game room.
+
+    Returns:
+        True if the room state was modified, False otherwise.
+    """
+    if action in {"START_GAME", "NEXT_ROUND"}:
+        with SessionLocal() as db:
+            return room.draw_word(db)
+
+    if action == "REROLL_WORD":
+        with SessionLocal() as db:
+            return room.reroll_word(db)
+
+    if action == "START_WRITING":
+        changed = room.start_writing()
+        if changed:
+            start_writing_timer(room.code, room.round_number, room.writing_time_limit)
+        return changed
+
+    if action == "UPDATE_SETTINGS":
+        writing_time = data.get("writing_time_limit")
+        if isinstance(writing_time, int):
+            return room.update_writing_time_limit(writing_time)
+
+    return False
 
 
 def handle_game_action(
@@ -179,38 +286,22 @@ def handle_game_action(
     Returns:
         True if the room state was modified, False otherwise.
     """
-    changed = False
+    if not action:
+        return False
 
-    if action in {"START_GAME", "NEXT_ROUND"} and player.is_host:
-        with SessionLocal() as db:
-            changed = room.draw_word(db)
+    if player.is_host and handle_host_action(action, data, room):
+        return True
 
-    elif action == "REROLL_WORD" and player.is_host:
-        with SessionLocal() as db:
-            changed = room.reroll_word(db)
-
-    elif action == "START_WRITING" and player.is_host:
-        changed = room.start_writing()
-        if changed:
-            start_writing_timer(room.code, room.round_number, room.writing_time_limit)
-
-    elif action == "UPDATE_SETTINGS" and player.is_host:
-        writing_time = data.get("writing_time_limit")
-        if isinstance(writing_time, int):
-            changed = room.update_writing_time_limit(writing_time)
-
-    elif action == "SUBMIT_DEFINITION":
-        definition = str(data.get("definition", "")).strip()
-        changed = bool(definition and room.submit_definition(player.id, definition))
+    if action == "SUBMIT_DEFINITION":
         raw_definition = str(data.get("definition", "")).strip()
         definition = raw_definition or "(Aucune proposition)"
-        changed = room.submit_definition(player.id, definition)
+        return room.submit_definition(player.id, definition)
 
-    elif action == "SUBMIT_VOTE":
+    if action == "SUBMIT_VOTE":
         option_id = str(data.get("option_id", "")).strip()
-        changed = bool(option_id and room.submit_vote(player.id, option_id))
+        return bool(option_id and room.submit_vote(player.id, option_id))
 
-    return changed
+    return False
 
 
 
@@ -235,6 +326,7 @@ async def websocket_game_endpoint(
 
     player = room.players[player_id]
     player.is_connected = True
+    player.disconnected_at = None
 
     await manager.connect(code, player_id, websocket)
     await manager.broadcast_state(code, room)
@@ -243,10 +335,23 @@ async def websocket_game_endpoint(
         while True:
             data = await websocket.receive_json()
             action = data.get("action")
+            if action == "LEAVE_ROOM":
+                room.remove_player(player_id)
+                manager.disconnect(code, player_id)
+                if not room.players:
+                    game_manager.rooms.pop(code, None)
+                else:
+                    await manager.broadcast_state(code, room)
+                await websocket.close()
+                break
+
             if handle_game_action(action, data, room, player):
                 await manager.broadcast_state(code, room)
 
     except WebSocketDisconnect:
         player.is_connected = False
+        player.disconnected_at = time.time()
         manager.disconnect(code, player_id)
         await manager.broadcast_state(code, room)
+        start_disconnect_timer(code, player_id, DISCONNECT_TIMEOUT)
+

@@ -75,3 +75,4 @@ class RoomInfoResponse(BaseModel):
     room_code: str
     state: str
     player_count: int
+    max_players: int = 10

@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.backend.game_manager import (
     DEFAULT_WRITING_TIME,
+    MAX_PLAYERS,
     MAX_WRITING_TIME,
     MIN_WRITING_TIME,
     GameManager,
@@ -176,4 +177,51 @@ def test_writing_timeout_and_empty_definition_fallback(db_session):
 
     # Check that all options exist in room.options (1 real + 3 players)
     assert len(room.options) == 4
+
+
+def test_max_players_limit():
+    """Test that room accepts at most MAX_PLAYERS (10)."""
+    gm = GameManager()
+    room, _host = gm.create_room("Player 1")
+    assert len(room.players) == 1
+
+    for i in range(2, MAX_PLAYERS + 1):
+        player = room.add_player(f"Player {i}")
+        assert player is not None
+        assert len(room.players) == i
+
+    assert len(room.players) == MAX_PLAYERS
+
+    # Attempting to add the 11th player must return None
+    overflow_player = room.add_player("Player 11")
+    assert overflow_player is None
+    assert len(room.players) == MAX_PLAYERS
+
+
+def test_remove_player_and_host_transfer():
+    """Test removing a player, host transfer, and empty room cleanup."""
+    gm = GameManager()
+    room, host = gm.create_room("Alice")
+    bob = room.add_player("Bob")
+    assert bob is not None
+
+    # Alice is host
+    assert room.host_id == host.id
+    assert host.is_host is True
+    assert bob.is_host is False
+
+    # Remove host Alice -> host transferred to Bob
+    assert room.remove_player(host.id) is True
+    assert len(room.players) == 1
+    assert room.host_id == bob.id
+    assert bob.is_host is True
+
+    # Remove Bob -> room is empty
+    assert room.remove_player(bob.id) is True
+    assert len(room.players) == 0
+
+    # Removing non-existent player returns False
+    assert room.remove_player("non-existent") is False
+
+
 

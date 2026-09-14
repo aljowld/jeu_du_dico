@@ -41,6 +41,11 @@ export default function App() {
       (message) => {
         if (message.type === 'STATE_UPDATE') {
           setGameState(message.data)
+          if (message.data.players && !message.data.players.some((p) => p.id === player.player_id)) {
+            setError('Vous avez été retiré de la partie après une période d\'inactivité.')
+            setPlayer(null)
+            setGameState(null)
+          }
         }
       },
       () => {
@@ -135,6 +140,8 @@ export default function App() {
         body: JSON.stringify({ player_name: nickname.trim() }),
       })
       if (!res.ok) {
+        const errJson = await res.json().catch(() => null)
+        if (errJson?.detail) throw new Error(errJson.detail)
         if (res.status === 404) throw new Error('Salle introuvable avec ce code.')
         throw new Error('Erreur lors de la tentative de rejoindre.')
       }
@@ -164,13 +171,23 @@ export default function App() {
     }
   }
 
+  const handleLeaveRoom = () => {
+    if (socketRef.current) {
+      socketRef.current.send('LEAVE_ROOM', {})
+      socketRef.current.disconnect()
+    }
+    setPlayer(null)
+    setGameState(null)
+    setError('')
+  }
+
   const handleSubmitDefinition = (e) => {
-    e.preventDefault()
     if (e) e.preventDefault()
     if (!fakeDefinition.trim()) return
     hasSubmittedRef.current = true
     sendAction('SUBMIT_DEFINITION', { definition: fakeDefinition.trim() })
   }
+
 
 
   const handleSubmitVote = (optionId) => {
@@ -269,6 +286,15 @@ export default function App() {
         <div className="brand">📖 Le Jeu du Dico</div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <span className="room-badge">SALLE : {player.room_code}</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+            onClick={handleLeaveRoom}
+            title="Quitter la salle"
+          >
+            🚪 Quitter
+          </button>
         </div>
       </header>
 
@@ -291,7 +317,7 @@ export default function App() {
               style={{ flex: 1, padding: '10px 16px', fontSize: '1rem' }}
               onClick={() => setLobbyTab('players')}
             >
-              👥 Joueurs ({gameState?.players?.length || 0})
+              👥 Joueurs ({gameState?.players?.length || 0}/{gameState?.max_players || 10})
             </button>
             <button
               className={`btn ${lobbyTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
@@ -306,11 +332,31 @@ export default function App() {
           {lobbyTab === 'players' && (
             <>
               <div>
-                <div className="player-list" style={{ marginTop: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Joueurs dans le salon ({gameState?.players?.length || 0}/{gameState?.max_players || 10})
+                  </span>
+                  {(gameState?.players?.length || 0) >= (gameState?.max_players || 10) && (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--accent)', background: 'rgba(245, 158, 11, 0.15)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                      Salon complet (10 max)
+                    </span>
+                  )}
+                </div>
+                <div className="player-list">
                   {gameState?.players?.map((p) => (
-                    <div key={p.id} className={`player-chip ${p.is_host ? 'host' : ''}`}>
+                    <div
+                      key={p.id}
+                      className={`player-chip ${p.is_host ? 'host' : ''}`}
+                      style={!p.is_connected ? { opacity: 0.55, borderStyle: 'dashed' } : {}}
+                      title={!p.is_connected ? 'Déconnecté (expulsion automatique après 30s)' : ''}
+                    >
                       <span>{p.name}</span>
                       {p.is_host && <span>👑</span>}
+                      {!p.is_connected && (
+                        <span style={{ fontSize: '0.75rem', color: '#f87171', marginLeft: '4px' }}>
+                          🔌 Hors-ligne
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -511,7 +557,6 @@ export default function App() {
                 color: timeLeft <= 5 ? 'var(--error)' : 'var(--accent)',
                 marginTop: '4px',
               }}>
-                ⏱️ Temps restant : {timeLeft} s
                 {timeLeft > 0 ? `⏱️ Temps restant : ${timeLeft} s` : '⏱️ Temps écoulé ! Validation automatique...'}
               </div>
             )}

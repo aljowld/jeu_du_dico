@@ -18,6 +18,8 @@ MIN_WRITING_TIME = 10
 MAX_WRITING_TIME = 300
 DEFAULT_WRITING_TIME = 60
 STEP_WRITING_TIME = 5
+MAX_PLAYERS = 10
+DISCONNECT_TIMEOUT = 30
 
 
 class GameState(StrEnum):
@@ -40,6 +42,8 @@ class Player:
     score: int = 0
     is_host: bool = False
     is_connected: bool = True
+    disconnected_at: float | None = None
+
 
     def to_dict(self) -> dict[str, Any]:
         """Convert player data to dictionary."""
@@ -100,20 +104,72 @@ class GameRoom:
             return True
         return False
 
-    def add_player(self, name: str, *, is_host: bool = False) -> Player:
-        """Add a new player to the room.
+    def add_player(self, name: str, *, is_host: bool = False) -> Player | None:
+        """Add a new player to the room if player limit is not reached.
 
         Args:
             name: Player display name.
             is_host: Whether this player is the room creator.
 
         Returns:
-            The created Player instance.
+            The created Player instance, or None if the room is full.
         """
+        if len(self.players) >= MAX_PLAYERS:
+            return None
+
         player_id = str(uuid.uuid4())
         player = Player(id=player_id, name=name, is_host=is_host)
         self.players[player_id] = player
         return player
+
+    def remove_player(self, player_id: str) -> bool:
+        """Remove a player from the room (e.g. disconnect timeout or voluntary leave).
+
+        Args:
+            player_id: Unique player ID to remove.
+
+        Returns:
+            True if player was removed, False if player was not found.
+        """
+        if player_id not in self.players:
+            return False
+
+        is_removed_host = self.players[player_id].is_host
+        del self.players[player_id]
+
+        # Clean up any submitted definitions or votes for this player
+        self.submitted_definitions.pop(player_id, None)
+        self.votes.pop(player_id, None)
+
+        # If no players remain, return True (room can be cleaned up)
+        if not self.players:
+            return True
+
+        # If the host was removed, transfer host rights to the next player
+        if is_removed_host:
+            connected = self.connected_players
+            new_host = connected[0] if connected else next(iter(self.players.values()))
+            new_host.is_host = True
+            self.host_id = new_host.id
+
+        # In-game checks: if in WRITING and all remaining connected players have submitted
+        if (
+            self.state == GameState.WRITING
+            and self.connected_players
+            and len(self.submitted_definitions) >= len(self.connected_players)
+        ):
+            self.start_voting()
+
+        # In-game checks: if in VOTING and all remaining connected players have voted
+        elif (
+            self.state == GameState.VOTING
+            and self.connected_players
+            and len(self.votes) >= len(self.connected_players)
+        ):
+            self.reveal_results()
+
+        return True
+
 
     def draw_word(self, db: Session) -> bool:
         """Draw a random word for a new round.
@@ -183,7 +239,6 @@ class GameRoom:
         if self.state != GameState.WRITING or player_id not in self.players:
             return False
 
-        self.submitted_definitions[player_id] = definition.strip()
         if player_id in self.submitted_definitions:
             return False
 
@@ -212,7 +267,6 @@ class GameRoom:
 
         self.start_voting()
         return True
-
 
     def start_voting(self) -> None:
         """Prepare shuffled definitions and switch state to VOTING."""
@@ -351,6 +405,7 @@ class GameRoom:
             "state": self.state,
             "round_number": self.round_number,
             "players": [p.to_dict() for p in self.players.values()],
+            "max_players": MAX_PLAYERS,
             "is_host": self.host_id == player_id,
             "writing_time_limit": self.writing_time_limit,
         }

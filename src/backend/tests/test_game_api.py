@@ -66,6 +66,7 @@ def test_create_and_join_room(client_with_seeded_words):
     info_resp = client_with_seeded_words.get(f"/api/rooms/{room_code}")
     assert info_resp.status_code == 200
     assert info_resp.json()["player_count"] == 1
+    assert info_resp.json()["max_players"] == 10
 
     # 3. Join room
     join_resp = client_with_seeded_words.post(
@@ -76,6 +77,23 @@ def test_create_and_join_room(client_with_seeded_words):
     player2_data = join_resp.json()
     assert player2_data["is_host"] is False
     assert player2_data["room_code"] == room_code
+
+    # 4. Fill room to 10 players
+    for i in range(3, 11):
+        resp = client_with_seeded_words.post(
+            f"/api/rooms/{room_code}/join",
+            json={"player_name": f"Player{i}"},
+        )
+        assert resp.status_code == 200
+
+    # 5. 11th player should be rejected with 400
+    overflow_resp = client_with_seeded_words.post(
+        f"/api/rooms/{room_code}/join",
+        json={"player_name": "PlayerEleven"},
+    )
+    assert overflow_resp.status_code == 400
+    assert "complète" in overflow_resp.json()["detail"]
+
 
 
 def test_websocket_game_flow(client_with_seeded_words):
@@ -109,4 +127,33 @@ def test_websocket_game_flow(client_with_seeded_words):
         assert msg2["type"] == "STATE_UPDATE"
         assert msg2["data"]["state"] == "WORD_SELECTION"
         assert "current_word" in msg2["data"]
+
+
+@pytest.mark.anyio
+async def test_disconnect_timeout_cleanup(client_with_seeded_words):
+    """Test that disconnected player is cleaned up after timeout."""
+    from src.backend.game_manager import game_manager
+    from src.backend.routers.game import schedule_disconnect_cleanup
+
+    create_resp = client_with_seeded_words.post(
+        "/api/rooms",
+        json={"host_name": "HostUser"},
+    )
+    room_code = create_resp.json()["room_code"]
+    room = game_manager.get_room(room_code)
+    assert room is not None
+    player2 = room.add_player("GuestPlayer")
+    assert player2 is not None
+    assert len(room.players) == 2
+
+    # Simulate player2 disconnecting
+    player2.is_connected = False
+
+    # Run cleanup with short timeout
+    await schedule_disconnect_cleanup(room_code, player2.id, timeout_seconds=0.01)
+
+    # Player 2 is removed
+    assert player2.id not in room.players
+    assert len(room.players) == 1
+
 
