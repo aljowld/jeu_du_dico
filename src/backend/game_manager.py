@@ -18,6 +18,11 @@ MIN_WRITING_TIME = 10
 MAX_WRITING_TIME = 300
 DEFAULT_WRITING_TIME = 60
 STEP_WRITING_TIME = 5
+
+MIN_ROUNDS = 1
+MAX_ROUNDS = 20
+DEFAULT_ROUNDS = 5
+
 MAX_PLAYERS = 10
 DISCONNECT_TIMEOUT = 30
 
@@ -80,6 +85,7 @@ class GameRoom:
     votes: dict[str, str] = field(default_factory=dict)  # player_id -> option_id
     round_results: dict[str, Any] | None = None
     round_number: int = 0
+    max_rounds: int = DEFAULT_ROUNDS
     writing_time_limit: int = DEFAULT_WRITING_TIME
     writing_started_at: float | None = None
 
@@ -103,6 +109,43 @@ class GameRoom:
             self.writing_time_limit = seconds
             return True
         return False
+
+    def update_max_rounds(self, rounds: int) -> bool:
+        """Update max rounds setting if within permitted bounds.
+
+        Args:
+            rounds: Target number of rounds.
+
+        Returns:
+            True if updated, False otherwise.
+        """
+        if self.state != GameState.LOBBY:
+            return False
+        if MIN_ROUNDS <= rounds <= MAX_ROUNDS:
+            self.max_rounds = rounds
+            return True
+        return False
+
+    def end_game(self) -> bool:
+        """End the game and show final scores."""
+        self.state = GameState.GAME_OVER
+        return True
+
+    def return_to_lobby(self) -> bool:
+        """Return the room to the lobby state, resetting game data."""
+        if self.state != GameState.GAME_OVER:
+            return False
+        self.state = GameState.LOBBY
+        self.round_number = 0
+        self.used_word_ids.clear()
+        self.current_word = None
+        self.submitted_definitions.clear()
+        self.options.clear()
+        self.votes.clear()
+        self.round_results = None
+        for p in self.players.values():
+            p.score = 0
+        return True
 
     def add_player(self, name: str, *, is_host: bool = False) -> Player | None:
         """Add a new player to the room if player limit is not reached.
@@ -404,6 +447,7 @@ class GameRoom:
             "host_id": self.host_id,
             "state": self.state,
             "round_number": self.round_number,
+            "max_rounds": self.max_rounds,
             "players": [p.to_dict() for p in self.players.values()],
             "max_players": MAX_PLAYERS,
             "is_host": self.host_id == player_id,
@@ -433,7 +477,7 @@ class GameRoom:
                 for opt in self.options
             ]
 
-        elif self.state == GameState.REVEAL:
+        elif self.state in {GameState.REVEAL, GameState.GAME_OVER}:
             base["results"] = self.round_results
 
         return base

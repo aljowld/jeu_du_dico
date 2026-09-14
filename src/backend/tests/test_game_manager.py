@@ -72,6 +72,35 @@ def test_room_settings_writing_time(db_session):
     assert room.update_writing_time_limit(70) is False
 
 
+def test_room_settings_max_rounds():
+    """Test updating the max rounds setting with validation."""
+    gm = GameManager()
+    room, _host = gm.create_room("Alice")
+
+    from src.backend.game_manager import DEFAULT_ROUNDS, MAX_ROUNDS, MIN_ROUNDS
+
+    # Check default
+    assert room.max_rounds == DEFAULT_ROUNDS
+
+    # Valid updates
+    assert room.update_max_rounds(3) is True
+    assert room.max_rounds == 3
+
+    assert room.update_max_rounds(MIN_ROUNDS) is True
+    assert room.max_rounds == MIN_ROUNDS
+
+    assert room.update_max_rounds(MAX_ROUNDS) is True
+    assert room.max_rounds == MAX_ROUNDS
+
+    # Invalid below min
+    assert room.update_max_rounds(0) is False
+    assert room.max_rounds == MAX_ROUNDS
+
+    # Invalid above max
+    assert room.update_max_rounds(21) is False
+    assert room.max_rounds == MAX_ROUNDS
+
+
 def test_full_game_loop_and_scoring(db_session):
     """Test full game round from lobby to reveal and scoring."""
     # Seed words
@@ -141,6 +170,18 @@ def test_full_game_loop_and_scoring(db_session):
     assert results is not None
     assert results["points_awarded"][host.id] == 2
     assert results["points_awarded"][bob.id] == 0
+
+    # 7. End game
+    assert room.end_game() is True
+    assert room.state == GameState.GAME_OVER
+
+    # 8. Return to lobby
+    assert room.return_to_lobby() is True
+    assert room.state == GameState.LOBBY
+    assert room.round_number == 0
+    assert len(room.used_word_ids) == 0
+    assert host.score == 0
+    assert bob.score == 0
 
 
 def test_writing_timeout_and_empty_definition_fallback(db_session):

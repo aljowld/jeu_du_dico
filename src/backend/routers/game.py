@@ -248,8 +248,13 @@ def handle_host_action(
         True if the room state was modified, False otherwise.
     """
     if action in {"START_GAME", "NEXT_ROUND"}:
+        if action == "NEXT_ROUND" and room.round_number >= room.max_rounds:
+            return room.end_game()
         with SessionLocal() as db:
             return room.draw_word(db)
+
+    if action == "RETURN_TO_LOBBY":
+        return room.return_to_lobby()
 
     if action == "REROLL_WORD":
         with SessionLocal() as db:
@@ -262,9 +267,18 @@ def handle_host_action(
         return changed
 
     if action == "UPDATE_SETTINGS":
+        changed = False
         writing_time = data.get("writing_time_limit")
         if isinstance(writing_time, int):
-            return room.update_writing_time_limit(writing_time)
+            if room.update_writing_time_limit(writing_time):
+                changed = True
+                
+        max_rounds = data.get("max_rounds")
+        if isinstance(max_rounds, int):
+            if room.update_max_rounds(max_rounds):
+                changed = True
+                
+        return changed
 
     return False
 

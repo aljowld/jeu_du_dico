@@ -171,6 +171,12 @@ export default function App() {
     }
   }
 
+  const handleUpdateMaxRounds = (newRounds) => {
+    if (newRounds >= 1 && newRounds <= 20) {
+      sendAction('UPDATE_SETTINGS', { max_rounds: newRounds })
+    }
+  }
+
   const handleLeaveRoom = () => {
     if (socketRef.current) {
       socketRef.current.send('LEAVE_ROOM', {})
@@ -409,6 +415,54 @@ export default function App() {
                 )}
               </div>
 
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '14px',
+                padding: '14px 18px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+                marginTop: '12px',
+                marginBottom: '16px',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    🏁 Nombre de manches :
+                    <span style={{ color: '#fbbf24', fontFamily: 'var(--font-display)', fontSize: '1.25rem' }}>
+                      {gameState?.max_rounds ?? 5}
+                    </span>
+                  </div>
+                </div>
+
+                {isHost && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '40px', height: '40px', fontSize: '1.4rem', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      disabled={(gameState?.max_rounds ?? 5) <= 1}
+                      onClick={() => handleUpdateMaxRounds((gameState?.max_rounds ?? 5) - 1)}
+                      title="Diminuer d'une manche"
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '40px', height: '40px', fontSize: '1.4rem', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      disabled={(gameState?.max_rounds ?? 5) >= 20}
+                      onClick={() => handleUpdateMaxRounds((gameState?.max_rounds ?? 5) + 1)}
+                      title="Augmenter d'une manche"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {isHost ? (
                 <button className="btn btn-accent" onClick={handleStartGame}>
                   Lancer la partie 🚀
@@ -493,6 +547,62 @@ export default function App() {
                 </p>
               </div>
 
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.45)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '16px',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                <div>
+                  <h4 style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                    🏁 Nombre de manches
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Détermine la durée de la partie.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', margin: '10px 0' }}>
+                  {isHost && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ width: '48px', height: '48px', fontSize: '1.5rem', padding: 0 }}
+                      disabled={(gameState?.max_rounds ?? 5) <= 1}
+                      onClick={() => handleUpdateMaxRounds((gameState?.max_rounds ?? 5) - 1)}
+                    >
+                      −
+                    </button>
+                  )}
+
+                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.2rem', fontWeight: 700, color: '#fef08a' }}>
+                      {gameState?.max_rounds ?? 5}
+                    </div>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      manches
+                    </span>
+                  </div>
+
+                  {isHost && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ width: '48px', height: '48px', fontSize: '1.5rem', padding: 0 }}
+                      disabled={(gameState?.max_rounds ?? 5) >= 20}
+                      onClick={() => handleUpdateMaxRounds((gameState?.max_rounds ?? 5) + 1)}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+
+                <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Minimum 1 · Maximum 20
+                </p>
+              </div>
+
               {isHost && (
                 <button className="btn btn-accent" onClick={handleStartGame}>
                   Lancer la partie 🚀
@@ -514,7 +624,7 @@ export default function App() {
       {/* --- WORD SELECTION (REROLL OPTION) --- */}
       {gameState?.state === 'WORD_SELECTION' && (
         <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)' }}>Manche {gameState.round_number} - Le mot mystère est :</p>
+          <p style={{ color: 'var(--text-secondary)' }}>Manche {gameState.round_number}/{gameState.max_rounds} - Le mot mystère est :</p>
           <div className="word-display">{gameState.current_word}</div>
 
           <p style={{ fontSize: '1.05rem', marginTop: '10px' }}>
@@ -542,7 +652,7 @@ export default function App() {
       {gameState?.state === 'WRITING' && (
         <div className="card">
           <div style={{ textAlign: 'center' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>Mot à définir :</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Manche {gameState.round_number}/{gameState.max_rounds} - Mot à définir :</p>
             <div className="word-display" style={{ fontSize: '2rem', margin: '8px 0' }}>
               {gameState.current_word}
             </div>
@@ -593,7 +703,7 @@ export default function App() {
       {gameState?.state === 'VOTING' && (
         <div className="card">
           <div style={{ textAlign: 'center' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>Trouve la VRAIE définition pour :</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Manche {gameState.round_number}/{gameState.max_rounds} - Trouve la VRAIE définition pour :</p>
             <div className="word-display" style={{ fontSize: '2rem', margin: '8px 0' }}>
               {gameState.current_word}
             </div>
@@ -634,7 +744,7 @@ export default function App() {
       {gameState?.state === 'REVEAL' && (
         <div className="card">
           <div style={{ textAlign: 'center' }}>
-            <h2>Résultats de la manche 🏆</h2>
+            <h2>Résultats de la manche {gameState.round_number}/{gameState.max_rounds} 🏆</h2>
             <div className="word-display" style={{ fontSize: '2rem', margin: '12px 0' }}>
               {gameState.results?.word}
             </div>
@@ -681,7 +791,37 @@ export default function App() {
 
           {isHost && (
             <button className="btn btn-accent" onClick={handleNextRound} style={{ marginTop: '16px' }}>
-              Manche suivante ➡️
+              {gameState.round_number >= (gameState.max_rounds ?? 5) ? 'Terminer la partie 🏁' : 'Manche suivante ➡️'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* --- GAME OVER PHASE --- */}
+      {gameState?.state === 'GAME_OVER' && (
+        <div className="card">
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ fontSize: '2.5rem', color: '#fbbf24', marginBottom: '16px' }}>Fin de la partie ! 🏁</h2>
+            <p style={{ color: 'var(--text-secondary)' }}>Classement final après {gameState.max_rounds} manches</p>
+          </div>
+
+          <div className="scoreboard" style={{ marginTop: '24px', padding: '16px', background: 'rgba(15, 23, 42, 0.45)', borderRadius: '16px' }}>
+            {gameState.results?.scoreboard?.map((p, idx) => (
+              <div key={p.id} className="score-row" style={idx === 0 ? { background: 'rgba(251, 191, 36, 0.15)', borderColor: '#fbbf24', transform: 'scale(1.02)' } : {}}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, color: idx === 0 ? '#fbbf24' : 'var(--text-secondary)', fontSize: idx === 0 ? '1.2rem' : '1rem' }}>
+                    {idx === 0 ? '👑 #1' : `#${idx + 1}`}
+                  </span>
+                  <span style={{ fontWeight: 600, fontSize: idx === 0 ? '1.2rem' : '1rem' }}>{p.name}</span>
+                </div>
+                <span className="score-pts" style={idx === 0 ? { color: '#fbbf24', fontSize: '1.2rem' } : {}}>{p.score} pts</span>
+              </div>
+            ))}
+          </div>
+
+          {isHost && (
+            <button className="btn btn-primary" onClick={() => sendAction('RETURN_TO_LOBBY')} style={{ marginTop: '24px', width: '100%' }}>
+              Retourner au salon 🏠
             </button>
           )}
         </div>
