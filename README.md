@@ -79,12 +79,18 @@ Prérequis : [Docker](https://www.docker.com/) & Docker Compose installés.
    cd jeu_du_dico
    ```
 
-2. **Lancer les conteneurs** :
+2. **(Optionnel) Configurer l'environnement** :
+   ```bash
+   cp .env.example .env
+   # Modifier JWT_SECRET_KEY dans .env pour la production
+   ```
+
+3. **Lancer les conteneurs** :
    ```bash
    docker compose up --build
    ```
 
-3. **Accéder à l'application** :
+4. **Accéder à l'application** :
    - 🌐 **Frontend** : [http://localhost:3000](http://localhost:3000)
    - 🔌 **API & Documentation Swagger** : [http://localhost:8000/docs](http://localhost:8000/docs)
 

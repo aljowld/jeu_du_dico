@@ -6,7 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - JWT_SECRET_KEY=change-in-production-jwt-secret-key-32-chars
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-insecure-jwt-secret-key-change-in-production}
     volumes:
       # Direct bind-mount: any update to words.db or code is instantly live
       - ./src/backend:/app/src/backend

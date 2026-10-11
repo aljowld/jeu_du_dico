@@ -6,12 +6,26 @@ dist/
 wheels/
 *.egg-info
 
+# Testing and linting
+.pytest_cache/
+.ruff_cache/
+
 # Virtual environments
-.venv
+.venv/
 
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
 
-# vs code
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDEs
 .vscode/
+.idea/
 
 # Frontend
 node_modules/
