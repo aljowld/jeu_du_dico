@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.backend.database import init_db
+from src.backend.core.database import init_db
 from src.backend.routers import auth, game
 
 

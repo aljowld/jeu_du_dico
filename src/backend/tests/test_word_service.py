@@ -5,8 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.backend.models import Base
-from src.backend.word_service import add_word, get_random_word, get_words_count
+from src.backend.models.models import Base
+from src.backend.services.word_service import add_word, get_random_word, get_words_count
 
 
 @pytest.fixture

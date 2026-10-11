@@ -5,12 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from src.backend.database import get_db
-from src.backend.dependencies import get_current_user
-from src.backend.models import User
-from src.backend.schemas import Token, UserCreate, UserLogin, UserRead
-from src.backend.security import create_access_token
-from src.backend.user_service import UserAlreadyExistsError, authenticate_user, create_user
+from src.backend.core.database import get_db
+from src.backend.core.dependencies import get_current_user
+from src.backend.core.security import create_access_token
+from src.backend.models.models import User
+from src.backend.models.schemas import Token, UserCreate, UserLogin, UserRead
+from src.backend.services.user_service import UserAlreadyExistsError, authenticate_user, create_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

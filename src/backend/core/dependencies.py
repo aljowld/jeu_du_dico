@@ -6,10 +6,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from src.backend.database import get_db
-from src.backend.models import User
-from src.backend.security import decode_access_token
-from src.backend.user_service import get_user_by_username
+from src.backend.core.database import get_db
+from src.backend.core.security import decode_access_token
+from src.backend.models.models import User
+from src.backend.services.user_service import get_user_by_username
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 

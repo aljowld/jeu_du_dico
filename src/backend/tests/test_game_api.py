@@ -6,10 +6,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.backend.database import get_db
+from src.backend.core.database import get_db
 from src.backend.main import app
-from src.backend.models import Base
-from src.backend.word_service import add_word
+from src.backend.models.models import Base
+from src.backend.services.word_service import add_word
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ def test_websocket_game_flow(client_with_seeded_words):
 @pytest.mark.anyio
 async def test_disconnect_timeout_cleanup(client_with_seeded_words):
     """Test that disconnected player is cleaned up after timeout."""
-    from src.backend.game_manager import game_manager
+    from src.backend.game.game_manager import game_manager
     from src.backend.routers.game import schedule_disconnect_cleanup
 
     create_resp = client_with_seeded_words.post(

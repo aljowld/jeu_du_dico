@@ -3,9 +3,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.backend.models import User
-from src.backend.schemas import UserCreate
-from src.backend.security import hash_password, verify_password
+from src.backend.core.security import hash_password, verify_password
+from src.backend.models.models import User
+from src.backend.models.schemas import UserCreate
 
 
 class UserAlreadyExistsError(Exception):

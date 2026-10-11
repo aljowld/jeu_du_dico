@@ -5,16 +5,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.backend.game_manager import (
+from src.backend.core.constants import (
     DEFAULT_WRITING_TIME,
     MAX_PLAYERS,
     MAX_WRITING_TIME,
     MIN_WRITING_TIME,
-    GameManager,
-    GameState,
 )
-from src.backend.models import Base
-from src.backend.word_service import add_word
+from src.backend.game.game_manager import GameManager, GameState
+from src.backend.models.models import Base
+from src.backend.services.word_service import add_word
 
 
 @pytest.fixture
@@ -77,7 +76,7 @@ def test_room_settings_max_rounds():
     gm = GameManager()
     room, _host = gm.create_room("Alice")
 
-    from src.backend.game_manager import DEFAULT_ROUNDS, MAX_ROUNDS, MIN_ROUNDS
+    from src.backend.core.constants import DEFAULT_ROUNDS, MAX_ROUNDS, MIN_ROUNDS
 
     # Check default
     assert room.max_rounds == DEFAULT_ROUNDS

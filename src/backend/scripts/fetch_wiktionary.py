@@ -9,8 +9,8 @@ from typing import Any
 
 import httpx
 
-from src.backend.database import SessionLocal, init_db
-from src.backend.models import Word
+from src.backend.core.database import SessionLocal, init_db
+from src.backend.models.models import Word
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

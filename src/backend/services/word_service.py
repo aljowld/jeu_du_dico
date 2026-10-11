@@ -3,7 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.backend.models import Word
+from src.backend.models.models import Word
 
 
 def get_random_word(

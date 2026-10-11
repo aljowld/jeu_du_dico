@@ -51,5 +51,8 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ty.src]
+exclude = ["src/backend/tests"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]

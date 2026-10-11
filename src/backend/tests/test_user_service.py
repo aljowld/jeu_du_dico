@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.backend.models import Base
-from src.backend.schemas import UserCreate
-from src.backend.user_service import (
+from src.backend.models.models import Base
+from src.backend.models.schemas import UserCreate
+from src.backend.services.user_service import (
     UserAlreadyExistsError,
     authenticate_user,
     create_user,

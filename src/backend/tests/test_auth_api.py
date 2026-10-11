@@ -6,9 +6,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.backend.database import get_db
+from src.backend.core.database import get_db
 from src.backend.main import app
-from src.backend.models import Base
+from src.backend.models.models import Base
 
 
 @pytest.fixture

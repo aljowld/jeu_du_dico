@@ -13,17 +13,19 @@ from fastapi import (
     status,
 )
 
-from src.backend.connection_manager import manager
-from src.backend.database import SessionLocal
-from src.backend.game_manager import (
+from src.backend.core.constants import (
     DISCONNECT_TIMEOUT,
     MAX_PLAYERS,
+)
+from src.backend.core.database import SessionLocal
+from src.backend.game.connection_manager import manager
+from src.backend.game.game_manager import (
     GameRoom,
     GameState,
     Player,
     game_manager,
 )
-from src.backend.schemas import (
+from src.backend.models.schemas import (
     CreateRoomRequest,
     JoinRoomRequest,
     RoomAccessResponse,
@@ -225,9 +227,7 @@ def start_disconnect_timer(
     except RuntimeError:
         return
 
-    task = loop.create_task(
-        schedule_disconnect_cleanup(room_code, player_id, timeout_seconds)
-    )
+    task = loop.create_task(schedule_disconnect_cleanup(room_code, player_id, timeout_seconds))
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
@@ -247,40 +247,33 @@ def handle_host_action(
     Returns:
         True if the room state was modified, False otherwise.
     """
+    changed = False
+
     if action in {"START_GAME", "NEXT_ROUND"}:
         if action == "NEXT_ROUND" and room.round_number >= room.max_rounds:
-            return room.end_game()
+            changed = room.end_game()
+        else:
+            with SessionLocal() as db:
+                changed = room.draw_word(db)
+    elif action == "RETURN_TO_LOBBY":
+        changed = room.return_to_lobby()
+    elif action == "REROLL_WORD":
         with SessionLocal() as db:
-            return room.draw_word(db)
-
-    if action == "RETURN_TO_LOBBY":
-        return room.return_to_lobby()
-
-    if action == "REROLL_WORD":
-        with SessionLocal() as db:
-            return room.reroll_word(db)
-
-    if action == "START_WRITING":
+            changed = room.reroll_word(db)
+    elif action == "START_WRITING":
         changed = room.start_writing()
         if changed:
             start_writing_timer(room.code, room.round_number, room.writing_time_limit)
-        return changed
-
-    if action == "UPDATE_SETTINGS":
-        changed = False
+    elif action == "UPDATE_SETTINGS":
         writing_time = data.get("writing_time_limit")
-        if isinstance(writing_time, int):
-            if room.update_writing_time_limit(writing_time):
-                changed = True
-                
-        max_rounds = data.get("max_rounds")
-        if isinstance(max_rounds, int):
-            if room.update_max_rounds(max_rounds):
-                changed = True
-                
-        return changed
+        if isinstance(writing_time, int) and room.update_writing_time_limit(writing_time):
+            changed = True
 
-    return False
+        max_rounds = data.get("max_rounds")
+        if isinstance(max_rounds, int) and room.update_max_rounds(max_rounds):
+            changed = True
+
+    return changed
 
 
 def handle_game_action(
@@ -316,7 +309,6 @@ def handle_game_action(
         return bool(option_id and room.submit_vote(player.id, option_id))
 
     return False
-
 
 
 @ws_router.websocket("/ws/rooms/{room_code}/{player_id}")
@@ -368,4 +360,3 @@ async def websocket_game_endpoint(
         manager.disconnect(code, player_id)
         await manager.broadcast_state(code, room)
         start_disconnect_timer(code, player_id, DISCONNECT_TIMEOUT)
-

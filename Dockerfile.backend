@@ -19,7 +19,7 @@ COPY src/backend ./src/backend
 RUN uv sync --frozen --no-dev
 
 # Populate words database if not present
-RUN uv run python -m src.backend.seed_db
+RUN uv run python -m src.backend.scripts.seed_db
 
 EXPOSE 8000
 

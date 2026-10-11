@@ -11,20 +11,18 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.backend.models import Word
-from src.backend.word_service import get_random_word
-
-MIN_WRITING_TIME = 10
-MAX_WRITING_TIME = 300
-DEFAULT_WRITING_TIME = 60
-STEP_WRITING_TIME = 5
-
-MIN_ROUNDS = 1
-MAX_ROUNDS = 20
-DEFAULT_ROUNDS = 5
-
-MAX_PLAYERS = 10
-DISCONNECT_TIMEOUT = 30
+from src.backend.core.constants import (
+    DEFAULT_ROUNDS,
+    DEFAULT_WRITING_TIME,
+    MAX_PLAYERS,
+    MAX_ROUNDS,
+    MAX_WRITING_TIME,
+    MIN_ROUNDS,
+    MIN_WRITING_TIME,
+    STEP_WRITING_TIME,
+)
+from src.backend.models.models import Word
+from src.backend.services.word_service import get_random_word
 
 
 class GameState(StrEnum):
@@ -48,7 +46,6 @@ class Player:
     is_host: bool = False
     is_connected: bool = True
     disconnected_at: float | None = None
-
 
     def to_dict(self) -> dict[str, Any]:
         """Convert player data to dictionary."""
@@ -212,7 +209,6 @@ class GameRoom:
             self.reveal_results()
 
         return True
-
 
     def draw_word(self, db: Session) -> bool:
         """Draw a random word for a new round.

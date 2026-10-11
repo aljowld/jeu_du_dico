@@ -7,10 +7,10 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.backend.models import Base
+from src.backend.models.models import Base
 
 # Build database path relative to backend folder or read from env
-DB_PATH = Path(__file__).parent / "words.db"
+DB_PATH = Path(__file__).parent.parent / "words.db"
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
 
 connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
