@@ -75,7 +75,7 @@ Prérequis : [Docker](https://www.docker.com/) & Docker Compose installés.
 
 1. **Cloner le dépôt** :
    ```bash
-   git clone https://github.com/<votre-utilisateur>/jeu_du_dico.git
+   git clone https://github.com/aljowld/jeu_du_dico.git
    cd jeu_du_dico
    ```
 
